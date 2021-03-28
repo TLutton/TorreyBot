@@ -1,8 +1,12 @@
 from django.contrib.auth import login, authenticate
+from django.http import HttpResponseBadRequest
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.shortcuts import render, redirect, HttpResponseRedirect
 from django.urls import reverse
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
 from .forms import GolferUpdateForm
+from .utils import TorreyUtils
 # import the logging library
 import logging
 
@@ -45,6 +49,7 @@ def loginPage(request):
     return render(request, 'login.html', {'form': form})
 
 
+@login_required(login_url='')
 def homePage(request):
     user = request.user
     logger.error("homepage")
@@ -73,3 +78,30 @@ def homePage(request):
     logger.error("Rendering home")
     return render(request, 'home.html', {'form': form})
 
+def teeTrigger(request):
+    # TODO: Expect secret text in POST
+    if request.method == "POST" or request.method == "GET":
+        logger.error("Got trigger!")
+        helper = TorreyUtils.TorreyUtils()
+        all_times = helper.get_times()
+        active_users = User.objects.filter(golfer__send_notifications=True)
+        if all_times:
+            for active in active_users:
+                num_players = active.golfer.num_players
+                courses = []
+                if active.golfer.torrey_north:
+                    courses.append("torrey_north")
+                if active.golfer.torrey_south:
+                    courses.append("torrey_south")
+                if courses:
+                    msg_body = helper.filter_times(all_times, {"num_players": active.golfer.num_players, "courses": courses})
+                    if msg_body:
+                        logger.error("Found appropriate times. Sending email.")
+                        helper.send_notification(msg_body, active.golfer.email)
+                    else:
+                        logger.error("No appropriate times found.")
+        else:
+            logger.error("Failed to get any tee times!")
+        return render(request, 'trigger.html', {'timesData': all_times})
+    else:
+        return HttpResponseBadRequest(request)

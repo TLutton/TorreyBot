@@ -1,13 +1,12 @@
 import logging
-import argparse
 import time
-import getpass
+from datetime import datetime, timedelta
 import typing
 import json
 import smtplib
 import ssl
 import requests
-
+import json
 
 PAGE_URL = "https://foreupsoftware.com/index.php/booking/index/19347#/"
 LOGIN_URL = "https://foreupsoftware.com/index.php/api/booking/users/login"
@@ -19,95 +18,108 @@ LOGIN_FORM = {
     "api_key": "no_limits",
     "course_id": 19347,
 }
+COURSE_IDS = [
+    {"name":"torrey_north", "id": 1468},
+    {"name":"torrey_south", "id": 1487}
+]
 LOGIN_HEADERS = {"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"}
-EMAILS = []
-DATE = "02-14-2021"
-PLAYERS = 2
+
+logger = logging.getLogger(__name__)
 
 
-def get_times(
-    username: str, password: str, date: str, players: int
-) -> typing.Optional[typing.Dict]:
-    with requests.Session() as sesh:
-        init_page = sesh.get(PAGE_URL)
-        cookies = init_page.cookies
-        login_form = LOGIN_FORM.copy()
-        login_form["username"] = username
-        login_form["password"] = password
-        logging.info("Attempting to login.")
-        login = sesh.post(LOGIN_URL, login_form, headers=LOGIN_HEADERS, cookies=cookies)
-        logging.debug(str(login.content))
-        if login.status_code != 200:
-            logging.error(f"Login failed. Error: {login.status_code}")
-            return None
-        times_url = (
-            API_URL + f"times?time=all&date={date}&holes=18&players={players}"
-            "&booking_class=888&schedule_id=1487&schedule_ids%5B%5D=0&schedule_ids%5B%5D=1468"
-            "&schedule_ids%5B%5D=1487&specials_only=0&api_key=no_limits"
-        )
-        logging.info(f"Getting tee times for {date}")
-        tee_times = sesh.get(times_url, cookies=login.cookies)
-        logging.debug(str(tee_times.content))
-        if tee_times.status_code != 200:
-            logging.error(f"Failed to get tee times. Error: {tee_times.status_code}")
-            return None
-        try:
-            return json.loads(tee_times.content)
-        except json.JSONDecodeError as err:
-            logging.error(f"Unable to decode tee times content: {err}")
-            return None
+class TorreyUtils:
+    PORTAL_USER = ""
+    PORTAL_PWD = ""
+    EMAIL_USER = ""
+    EMAIL_PWD = ""
+    
+    def __init__(self):
+        with open('../utils_secrets.json') as f:
+            contents = json.loads(f.read())
+            self.PORTAL_USER = contents.get("PORTAL_USER")
+            self.PORTAL_PWD = contents.get("PORTAL_PWD")
+            self.EMAIL_USER = contents.get("EMAIL_USER")
+            self.EMAIL_PWD = contents.get("EMAIL_PWD")
+    
+    def get_next_weekends(self) -> typing.Tuple[str]:
+        today = datetime.today()
+        deltaSat = timedelta((12 - today.weekday()) % 7)
+        deltaSun = deltaSat + timedelta(days=1)
+        nextSat = (today + deltaSat).strftime("%m-%d-%y")
+        nextSun = (today + deltaSun).strftime("%m-%d-%y")
+        return (nextSat, nextSun)
 
 
-def send_notification(times_data):
-    message = """Subject: Tee Times Found
+    def get_times(self) -> typing.Dict:
+        dates = self.get_next_weekends()
+        with requests.Session() as sesh:
+            init_page = sesh.get(PAGE_URL)
+            cookies = init_page.cookies
+            login_form = LOGIN_FORM.copy()
+            login_form["username"] = self.PORTAL_USER
+            login_form["password"] = self.PORTAL_PWD
+            logger.error("Attempting to login.")
+            logger.error(cookies)
+            login = sesh.post(LOGIN_URL, login_form, headers=LOGIN_HEADERS, cookies=cookies)
+            logger.error(str(login.content))
+            if login.status_code != 200:
+                logger.error(f"Login failed. Error: {login.status_code}")
+                return None
+            results = {}
+            for course in COURSE_IDS:
+                results[course["name"]] = {}
+                for date in dates:
+                    # Hardcoded to get times from 6am to 12:00pm
+                    times_url = (
+                        API_URL + f"times?time=all&date={date}&holes=18"
+                        "&booking_class=888&startTime=0600&endTime=1200&schedule_id=1487&schedule_ids%5B%5D=0&schedule_ids%5B%5D=1468"
+                        f"&schedule_ids%5B%5D={course['id']}&specials_only=0&api_key=no_limits"
+                    )
+                    logger.error(f"Getting tee times for {course['name']} on {date}")
+                    tee_times = sesh.get(times_url, cookies=login.cookies)
+                    logger.error(str(tee_times.content))
+                    if tee_times.status_code != 200:
+                        logger.error(f"Failed to get tee times. Error: {tee_times.status_code}")
+                    try:
+                        results[course["name"]][date] = (json.loads(tee_times.content))
+                    except json.JSONDecodeError as err:
+                        logger.error(f"Unable to decode tee times content: {err}")
+            return results
+                
+
+    def send_notification(self, message_body: str, recipient: str):
+        message = """Subject: Tee Times Found
 
 
-"""
-    for entry in times_data:
-        players = entry.get("available_spots")
-        tee_time = entry.get("time")
-        message += f"Found time for {players} players at {tee_time}\n"
-    port = 465
-    username = input("Enter email sender address: ")
-    password = getpass.getpass(prompt="Password: ", stream=None)
-    context = ssl.create_default_context()
+    """
+        message += message_body
+        port = 465
+        username = self.EMAIL_USER
+        password = self.EMAIL_PWD
+        context = ssl.create_default_context()
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", port, context=context) as server:
-        logging.info(f"Sending email {message}")
-        server.login(username, password)
-        server.sendmail(username, EMAILS, message)
+        with smtplib.SMTP_SSL("smtp.gmail.com", port, context=context) as server:
+            logger.error(f"Sending email {message}")
+            server.login(username, password)
+            server.sendmail(username, recipient, message)
+    
 
-
-def main():
-    date = time.strftime("%m-%d-%y-%H.%M.%S", time.gmtime())
-
-    parser = argparse.ArgumentParser(description="Check Torrey tee times.")
-    parser.add_argument("username", nargs=1, help="Username duh.")
-    parser.add_argument("-v", action="store_true")
-    args = parser.parse_args()
-    user_password = getpass.getpass(prompt="Password: ", stream=None)
-
-    log_level = logging.DEBUG if args.v else logging.INFO
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[
-            logging.FileHandler("TorreyBot-{}.txt".format(date)),
-            logging.StreamHandler(),
-        ],
-    )
-
-    times = get_times(args.username, user_password, DATE, PLAYERS)
-    if not times:
-        logging.error("Failed to get tee times.")
-        return 1
-
-    if EMAILS:
-        logging.info(f"Sending emails to: {EMAILS}")
-        send_notification(times)
-    else:
-        logging.info("No emails provided.")
-
-
-if __name__ == "__main__":
-    main()
+    def filter_times(self, data: typing.Dict, filters: typing.Dict) -> str:
+        # allowed filters: num_players, list of courses
+        result = ""
+        # Data format: courseName->date->available_spots
+        if not data:
+            logger.error("No data to parse!")
+            return result
+        for course in data:
+            if course in filters.get("courses"):
+                msg = ""
+                for date in data[course]:
+                    for entry in data[course][date]:
+                        if entry["available_spots"] >= filters.get("num_players",4):
+                            if not msg:
+                                msg = f"Times for {course}\n"
+                            msg += f"\t{entry.get('players')} players at {entry.get('time')}\n"
+                if msg:
+                    result += msg
+        return result

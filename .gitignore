@@ -10,3 +10,6 @@ db.sqlite3
 db.sqlite3-journal
 media
 secret_key.txt
+TorreyApp/utils/utils_secrets.json
+utils_secrets.json
+TorryBotServer/TorreyBot-*.txt
