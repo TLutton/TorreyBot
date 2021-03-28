@@ -1,0 +1,10 @@
+<h1>Welcome to Torrey Bot</h1>
+<form method="POST">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Login</button>
+    {{field.errors}}
+    {{form.non_field_errors}}
+</form>
+<h3>New User?</h3>
+<a href="{% url 'signup' %}">Sign Up Here</a>
