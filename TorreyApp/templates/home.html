@@ -1,0 +1,28 @@
+<h1>Welcome to Torrey Bot</h1>
+<p>Update your settings here:</p>
+<!--
+<form action="/home/" method="POST">
+    <label for="email">Email Address</label>
+    <input id="email" name="email" type="email" value="{{ current_email_address }}">
+    <label for="email_notifs">Email Notifications</label>
+    <input id="email_notifs" type="checkbox" name="email_notifs" value="{{ current_email_notifs}}">
+    <label for="min_players">Min Number of Players</label>
+    <select id="min_players" name="min_players">
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+    </select>
+    <p>Courses to watch</p>
+    <label for="TorreySouth">Torrey Pines South</label>
+    <input id="TorreySouth" type="checkbox" name="TorreySouth" value="{{ current_torrey_south }}">
+    <label for="TorreyNorth">Torrey Pines North</label>
+    <input id="TorreyNorth" type="checkbox" name="TorreyNorth" value="{{ current_torrey_north }}">
+</form>
+-->
+<form action="/app/home/" method="post">
+    {% csrf_token %}
+    {{ form }}
+    <br>
+    <input type="submit" value="Submit">
+</form>
